@@ -29,4 +29,12 @@ public class WeatherForecastController : ControllerBase
             })
             .ToArray();
     }
+    [HttpPost]
+    public IActionResult Post(string City)
+    {
+        // Process the city name
+        // For example, you can save it to a database or perform some other action
+        // Here, we'll just return a success message
+        return Ok($"City '{City}' received successfully.");
+    }
 }
