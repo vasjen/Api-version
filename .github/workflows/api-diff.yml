@@ -1,0 +1,92 @@
+name: API Diff on Merge to Main
+
+on:
+  pull_request:
+    types: [closed] # Запускаем при закрытии PR
+    branches:
+      - main
+
+# Условие: Запускать только если PR был смержен (а не просто закрыт)
+if: github.event.pull_request.merged == true
+
+jobs:
+  generate-api-diff:
+    runs-on: ubuntu-latest # Используем последнюю Ubuntu
+
+    steps:
+      - name: Checkout base branch state (before merge)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }} # SHA коммита в main ДО мерджа
+          path: 'base' # Клонируем в отдельную папку 'base'
+
+      - name: Checkout head branch state (after merge)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }} # SHA коммита ПОСЛЕ мерджа
+          path: 'head' # Клонируем в отдельную папку 'head'
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          # Укажите вашу версию .NET SDK
+          dotnet-version: '8.0.x' # <-- ЗАМЕНИТЕ НА ВАШУ ВЕРСИЮ
+
+      # --- Генерация Swagger для состояния ДО мерджа ---
+      - name: Build base project
+        run: dotnet build ./base/Api-version/Api-version.csproj --configuration Release # <-- УКАЖИТЕ ПУТЬ К ПРОЕКТУ
+        # Возможно, потребуется dotnet restore перед build
+
+      - name: Install Swashbuckle CLI (if needed)
+        run: dotnet tool install -g Swashbuckle.AspNetCore.Cli || true # Устанавливаем глобально, || true чтобы не падать, если уже есть
+
+      - name: Generate Swagger (base)
+        run: |
+          # Команда для генерации swagger.json. Адаптируйте под ваш проект!
+          # Возможно, путь к DLL и имя документа (v1) у вас другие.
+          dotnet swagger tofile --output ./swagger-base.json ./base/path/to/your/bin/Release/net8.0/Api-version.dll v1 # <-- АДАПТИРУЙТЕ ПУТЬ К DLL И ВЕРСИЮ API
+        # Важно: Убедитесь, что путь к DLL корректен после сборки
+
+      # --- Генерация Swagger для состояния ПОСЛЕ мерджа ---
+      - name: Build head project
+        run: dotnet build ./head/path/to/your/project.csproj --configuration Release # <-- УКАЖИТЕ ПУТЬ К ПРОЕКТУ
+
+      - name: Generate Swagger (head)
+        run: |
+          # Аналогичная команда для нового состояния
+          dotnet swagger tofile --output ./swagger-head.json ./head/path/to/your/bin/Release/net7.0/YourApiProject.dll v1
+
+      # --- Сравнение и генерация отчета ---
+      - name: Setup Node.js (for openapi-diff npm package)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18' # openapi-diff может требовать определенную версию Node
+
+      - name: Install openapi-diff
+        run: npm install -g @openapitools/openapi-diff-cli
+
+      - name: Run openapi-diff and generate HTML report
+        run: |
+          openapi-diff ./swagger-base.json ./swagger-head.json --html report.html || echo "openapi-diff found differences or failed, continuing to upload report."
+          # Используем '|| echo ...' чтобы шаг не падал, если есть отличия (openapi-diff возвращает ненулевой код при наличии отличий)
+
+      # --- Сохранение отчета ---
+      - name: Upload HTML Diff Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-diff-report-${{ github.event.pull_request.number }} # Имя артефакта с номером PR
+          path: report.html # Путь к файлу отчета
+
+      # --- (Опционально) Отправка в Telegram ---
+      # - name: Send diff report to Telegram
+      #   if: success() || failure() # Отправлять всегда или только при успехе/ошибке?
+      #   uses: appleboy/telegram-action@master
+      #   with:
+      #     to: ${{ secrets.TELEGRAM_CHAT_ID }} # ID чата (из секретов)
+      #     token: ${{ secrets.TELEGRAM_BOT_TOKEN }} # Токен бота (из секретов)
+      #     message: |
+      #       API Diff Report for PR #${{ github.event.pull_request.number }} merged into main.
+      #       Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      #       Report artifact is available for download.
+      #     # Можно попробовать отправить сам файл, но есть ограничения по размеру
+      #     # document: report.html
