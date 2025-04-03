@@ -37,4 +37,13 @@ public class WeatherForecastController : ControllerBase
         // Here, we'll just return a success message
         return Ok($"City '{City}' received successfully.");
     }
+    
+    [HttpPut(Name = "PutWeatherForecast")]
+    public IActionResult Put(string City)
+    {
+        // Process the city name
+        // For example, you can save it to a database or perform some other action
+        // Here, we'll just return a success message
+        return Ok($"City '{City}' updated successfully.");
+    }
 }
