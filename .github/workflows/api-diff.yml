@@ -40,7 +40,7 @@ jobs:
         working-directory: ./base
         run: |
           dotnet new tool-manifest --force # Создаем манифест (или перезаписываем, если есть)
-          dotnet tool install Swashbuckle.AspNetCore.Cli --local --version 6.4.0
+          dotnet tool install Swashbuckle.AspNetCore.Cli --local 
 
       - name: Build base project
         run: dotnet build ./base/Api-version/Api-version.csproj --configuration Release
