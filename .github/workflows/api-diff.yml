@@ -42,7 +42,7 @@ jobs:
         run: |
           # Команда для генерации swagger.json. Адаптируйте под ваш проект!
           # Возможно, путь к DLL и имя документа (v1) у вас другие.
-          dotnet swagger tofile --output ./swagger-base.json ./base/path/to/your/bin/Release/net8.0/Api-version.dll v1 # <-- АДАПТИРУЙТЕ ПУТЬ К DLL И ВЕРСИЮ API
+          dotnet swagger tofile --output ./swagger-base.json ./head/Api-version/bin/Debug/net8.0/Api-version.dll v1
         # Важно: Убедитесь, что путь к DLL корректен после сборки
 
       # --- Генерация Swagger для состояния ПОСЛЕ мерджа ---
@@ -52,7 +52,7 @@ jobs:
       - name: Generate Swagger (head)
         run: |
           # Аналогичная команда для нового состояния
-          dotnet swagger tofile --output ./swagger-head.json ./head/path/to/your/bin/Release/net7.0/YourApiProject.dll v1
+          dotnet swagger tofile --output ./swagger-head.json ./head/Api-version/bin/Debug/net8.0/Api-version.dll v1
 
       # --- Сравнение и генерация отчета ---
       - name: Setup Node.js (for openapi-diff npm package)
