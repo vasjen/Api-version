@@ -9,6 +9,7 @@ on:
 jobs:
   generate-api-diff:
     # Запускаем только если PR был смержен
+
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest # Используем последнюю Ubuntu
 
@@ -31,6 +32,7 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x' # Ваша версия .NET SDK
+
 
       # --- Шаг 3: Генерация Swagger для состояния ДО мерджа (base) ---
       - name: Install Swashbuckle CLI (base)
@@ -57,7 +59,9 @@ jobs:
           dotnet new tool-manifest --force
           dotnet tool install Swashbuckle.AspNetCore.Cli --local --version 6.4.0
 
+
       - name: Build head project
+
         run: dotnet build ./head/Api-version/Api-version.csproj --configuration Release
 
       - name: Generate Swagger (head)
@@ -74,10 +78,12 @@ jobs:
             openapitools/openapi-diff:latest \
             --html-detailed /specs/result.html /specs/swagger-base.json /specs/swagger-new.json || true
 
+
       # --- Шаг 6: Сохранение отчета как артефакта ---
       - name: Upload HTML Diff Report
         uses: actions/upload-artifact@v4
         with:
+        
           name: api-diff-report-${{ github.event.pull_request.number }} # Имя артефакта с номером PR
           path: result.html # Путь к файлу отчета в рабочей директории workflow
 
@@ -92,3 +98,4 @@ jobs:
       #       API Diff Report generated for PR #${{ github.event.pull_request.number }} merged into master.
       #       Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       #       Download the report from the artifacts section of the workflow run.
+
