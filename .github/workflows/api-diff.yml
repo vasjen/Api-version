@@ -32,27 +32,22 @@ jobs:
 
       # --- Генерация Swagger для состояния ДО мерджа ---
       - name: Build base project
-        run: dotnet build ./base/Api-version/Api-version.csproj --configuration Release # <-- УКАЖИТЕ ПУТЬ К ПРОЕКТУ
+        run: dotnet build ./base/Api-version/Api-version.csproj --configuration Release
         # Возможно, потребуется dotnet restore перед build
 
       - name: Install Swashbuckle CLI (if needed)
-        run: dotnet tool install -g Swashbuckle.AspNetCore.Cli || true # Устанавливаем глобально, || true чтобы не падать, если уже есть
+        run: dotnet tool install -g Swashbuckle.AspNetCore.Cli || true 
 
       - name: Generate Swagger (base)
-        run: |
-          # Команда для генерации swagger.json. Адаптируйте под ваш проект!
-          # Возможно, путь к DLL и имя документа (v1) у вас другие.
-          dotnet swagger tofile --output ./swagger-base.json ./head/Api-version/bin/Debug/net8.0/Api-version.dll v1
+        run: dotnet swagger tofile --output ./swagger-base.json ./head/Api-version/bin/Debug/net8.0/Api-version.dll v1
         # Важно: Убедитесь, что путь к DLL корректен после сборки
 
       # --- Генерация Swagger для состояния ПОСЛЕ мерджа ---
       - name: Build head project
-        run: dotnet build ./head/path/to/your/project.csproj --configuration Release # <-- УКАЖИТЕ ПУТЬ К ПРОЕКТУ
+        run: dotnet build ./head/path/to/your/project.csproj --configuration Release 
 
       - name: Generate Swagger (head)
-        run: |
-          # Аналогичная команда для нового состояния
-          dotnet swagger tofile --output ./swagger-head.json ./head/Api-version/bin/Debug/net8.0/Api-version.dll v1
+        run: dotnet swagger tofile --output ./swagger-head.json ./head/Api-version/bin/Debug/net8.0/Api-version.dll v1
 
       # --- Сравнение и генерация отчета ---
       - name: Setup Node.js (for openapi-diff npm package)
@@ -66,8 +61,7 @@ jobs:
       - name: Run openapi-diff and generate HTML report
         run: |
           openapi-diff ./swagger-base.json ./swagger-head.json --html report.html || echo "openapi-diff found differences or failed, continuing to upload report."
-          # Используем '|| echo ...' чтобы шаг не падал, если есть отличия (openapi-diff возвращает ненулевой код при наличии отличий)
-
+          
       # --- Сохранение отчета ---
       - name: Upload HTML Diff Report
         uses: actions/upload-artifact@v4
