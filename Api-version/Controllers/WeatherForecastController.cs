@@ -29,7 +29,7 @@ public class WeatherForecastController : ControllerBase
             })
             .ToArray();
     }
-    [HttpPost]
+    [HttpPost(Name = "PostWeatherForecast")]
     public IActionResult Post(string City)
     {
         // Process the city name
