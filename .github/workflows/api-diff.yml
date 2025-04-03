@@ -37,11 +37,7 @@ jobs:
         run: dotnet tool install -g Swashbuckle.AspNetCore.Cli || true
 
       - name: Generate Swagger (base)
-        run: |
-          # Добавляем путь к глобальным инструментам .NET в PATH
-          export PATH="$HOME/.dotnet/tools:$PATH"
-          # Используем правильный путь к DLL из папки base и конфигурацию Release
-          dotnet swagger tofile --output ./swagger-base.json ./base/Api-version/bin/Release/net8.0/Api-version.dll v1
+        run: export PATH="$HOME/.dotnet/tools:$PATH" && dotnet swagger tofile --output ./swagger-base.json ./base/Api-version/bin/Release/net8.0/Api-version.dll v1
 
       # --- Генерация Swagger для состояния ПОСЛЕ мерджа ---
       - name: Build head project
@@ -49,11 +45,7 @@ jobs:
         run: dotnet build ./head/Api-version/Api-version.csproj --configuration Release
 
       - name: Generate Swagger (head)
-        run: |
-          # Добавляем путь к глобальным инструментам .NET в PATH (на всякий случай, хотя должно наследоваться)
-          export PATH="$HOME/.dotnet/tools:$PATH"
-          # Используем правильный путь к DLL из папки head и конфигурацию Release
-          dotnet swagger tofile --output ./swagger-head.json ./head/Api-version/bin/Release/net8.0/Api-version.dll v1
+        run: export PATH="$HOME/.dotnet/tools:$PATH" && dotnet swagger tofile --output ./swagger-head.json ./head/Api-version/bin/Release/net8.0/Api-version.dll v1
 
       # --- Сравнение и генерация отчета ---
       - name: Setup Node.js (for openapi-diff npm package)
