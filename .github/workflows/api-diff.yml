@@ -57,7 +57,7 @@ jobs:
         working-directory: ./head
         run: |
           dotnet new tool-manifest --force
-          dotnet tool install Swashbuckle.AspNetCore.Cli --local --version 6.4.0
+          dotnet tool install Swashbuckle.AspNetCore.Cli --local 
 
 
       - name: Build head project
