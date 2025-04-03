@@ -9,7 +9,6 @@ on:
 jobs:
   generate-api-diff:
     # Запускаем только если PR был смержен
-
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest # Используем последнюю Ubuntu
 
@@ -18,54 +17,63 @@ jobs:
       - name: Checkout base branch state (before merge)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }} # SHA коммита в master ДО мерджа
-          path: 'base' # Клонируем в папку 'base'
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: 'base'
 
       - name: Checkout head branch state (after merge)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }} # SHA коммита ПОСЛЕ мерджа
-          path: 'head' # Клонируем в папку 'head'
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          path: 'head'
 
       # --- Шаг 2: Настройка .NET ---
-      - name: Setup .NET SDK
+      - name: Setup .NET 8 SDK # Нужен для сборки и для CLI 8.1.0
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0.x' # Ваша версия .NET SDK
-
+          dotnet-version: '8.0.x'
 
       # --- Шаг 3: Генерация Swagger для состояния ДО мерджа (base) ---
       - name: Install Swashbuckle CLI (base)
-        # Выполняем в папке 'base', чтобы установить инструмент локально для этого состояния
         working-directory: ./base
         run: |
-          dotnet new tool-manifest --force # Создаем манифест (или перезаписываем, если есть)
-          dotnet tool install Swashbuckle.AspNetCore.Cli --local 
+          dotnet new tool-manifest --force
+          dotnet tool install Swashbuckle.AspNetCore.Cli --local
+
+      - name: Restore base project dependencies # Добавляем явный restore
+        run: dotnet restore ./base/Api-version/Api-version.csproj
 
       - name: Build base project
-        run: dotnet build ./base/Api-version/Api-version.csproj --configuration Release
+        run: dotnet build ./base/Api-version/Api-version.csproj --configuration Release --no-restore # Добавляем --no-restore, т.к. сделали restore выше
+
+      # ДОБАВЛЯЕМ ШАГ ПРОВЕРКИ ВЫВОДА СБОРКИ
+      - name: List base build output
+        run: ls -l ./base/Api-version/bin/Release/net8.0/
+        # Посмотрите в логах этого шага, есть ли файл Swashbuckle.AspNetCore.Swagger.dll
 
       - name: Generate Swagger (base)
-        # Выполняем в папке 'base', чтобы использовать локальный инструмент
         working-directory: ./base
         run: |
           dotnet swagger tofile --output ../swagger-base.json ./Api-version/bin/Release/net8.0/Api-version.dll v1
 
       # --- Шаг 4: Генерация Swagger для состояния ПОСЛЕ мерджа (head) ---
       - name: Install Swashbuckle CLI (head)
-        # Выполняем в папке 'head'
         working-directory: ./head
         run: |
           dotnet new tool-manifest --force
-          dotnet tool install Swashbuckle.AspNetCore.Cli --local 
+          dotnet tool install Swashbuckle.AspNetCore.Cli --local
 
+      - name: Restore head project dependencies # Добавляем явный restore
+        run: dotnet restore ./head/Api-version/Api-version.csproj
 
       - name: Build head project
+        run: dotnet build ./head/Api-version/Api-version.csproj --configuration Release --no-restore # Добавляем --no-restore
 
-        run: dotnet build ./head/Api-version/Api-version.csproj --configuration Release
+      # ДОБАВЛЯЕМ ШАГ ПРОВЕРКИ ВЫВОДА СБОРКИ
+      - name: List head build output
+        run: ls -l ./head/Api-version/bin/Release/net8.0/
+        # Посмотрите в логах этого шага, есть ли файл Swashbuckle.AspNetCore.Swagger.dll
 
       - name: Generate Swagger (head)
-        # Выполняем в папке 'head'
         working-directory: ./head
         run: |
           dotnet swagger tofile --output ../swagger-new.json ./Api-version/bin/Release/net8.0/Api-version.dll v1
@@ -73,29 +81,20 @@ jobs:
       # --- Шаг 5: Сравнение Swagger файлов с помощью Docker ---
       - name: Run openapi-diff via Docker
         run: |
+          echo "Checking for swagger files..."
+          ls -l swagger-base.json swagger-new.json
+          echo "Running docker diff..."
           docker run --rm -t \
             -v ${{ github.workspace }}:/specs \
             openapitools/openapi-diff:latest \
             --html-detailed /specs/result.html /specs/swagger-base.json /specs/swagger-new.json || true
 
-
       # --- Шаг 6: Сохранение отчета как артефакта ---
       - name: Upload HTML Diff Report
         uses: actions/upload-artifact@v4
         with:
-        
-          name: api-diff-report-${{ github.event.pull_request.number }} # Имя артефакта с номером PR
-          path: result.html # Путь к файлу отчета в рабочей директории workflow
+          name: api-diff-report-${{ github.event.pull_request.number }}
+          path: result.html
 
       # --- Шаг 7: (Опционально) Отправка уведомления в Telegram ---
-      # - name: Send notification to Telegram
-      #   if: always() # Отправлять всегда (даже если были ошибки до этого, но отчет мог сгенерироваться)
-      #   uses: appleboy/telegram-action@master
-      #   with:
-      #     to: ${{ secrets.TELEGRAM_CHAT_ID }} # ID чата (из секретов)
-      #     token: ${{ secrets.TELEGRAM_BOT_TOKEN }} # Токен бота (из секретов)
-      #     message: |
-      #       API Diff Report generated for PR #${{ github.event.pull_request.number }} merged into master.
-      #       Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      #       Download the report from the artifacts section of the workflow run.
-
+      # ... (без изменений) ...
