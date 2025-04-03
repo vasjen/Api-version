@@ -4,67 +4,98 @@ on:
   pull_request:
     types: [closed] # Запускаем при закрытии PR
     branches:
-      - master # Убедитесь, что это ваша основная ветка (может быть main)
+      - master # Ваша основная ветка
 
 jobs:
   generate-api-diff:
+    # Запускаем только если PR был смержен
+
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest # Используем последнюю Ubuntu
 
     steps:
+      # --- Шаг 1: Получение кода ---
       - name: Checkout base branch state (before merge)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }} # SHA коммита в main ДО мерджа
-          path: 'base' # Клонируем в отдельную папку 'base'
+          ref: ${{ github.event.pull_request.base.sha }} # SHA коммита в master ДО мерджа
+          path: 'base' # Клонируем в папку 'base'
 
       - name: Checkout head branch state (after merge)
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }} # SHA коммита ПОСЛЕ мерджа
-          path: 'head' # Клонируем в отдельную папку 'head'
+          path: 'head' # Клонируем в папку 'head'
 
+      # --- Шаг 2: Настройка .NET ---
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x' # Ваша версия .NET SDK
 
-      # --- Генерация Swagger для состояния ДО мерджа ---
+
+      # --- Шаг 3: Генерация Swagger для состояния ДО мерджа (base) ---
+      - name: Install Swashbuckle CLI (base)
+        # Выполняем в папке 'base', чтобы установить инструмент локально для этого состояния
+        working-directory: ./base
+        run: |
+          dotnet new tool-manifest --force # Создаем манифест (или перезаписываем, если есть)
+          dotnet tool install Swashbuckle.AspNetCore.Cli --local --version 6.4.0
+
       - name: Build base project
         run: dotnet build ./base/Api-version/Api-version.csproj --configuration Release
 
-      - name: Install Swashbuckle CLI (if needed)
-        run: dotnet tool install -g Swashbuckle.AspNetCore.Cli || true
-
       - name: Generate Swagger (base)
-        run: export PATH="$HOME/.dotnet/tools:$PATH" && dotnet swagger tofile --output ./swagger-base.json ./base/Api-version/bin/Release/net8.0/Api-version.dll v1
+        # Выполняем в папке 'base', чтобы использовать локальный инструмент
+        working-directory: ./base
+        run: |
+          dotnet swagger tofile --output ../swagger-base.json ./Api-version/bin/Release/net8.0/Api-version.dll v1
 
-      # --- Генерация Swagger для состояния ПОСЛЕ мерджа ---
+      # --- Шаг 4: Генерация Swagger для состояния ПОСЛЕ мерджа (head) ---
+      - name: Install Swashbuckle CLI (head)
+        # Выполняем в папке 'head'
+        working-directory: ./head
+        run: |
+          dotnet new tool-manifest --force
+          dotnet tool install Swashbuckle.AspNetCore.Cli --local --version 6.4.0
+
+
       - name: Build head project
-        # Указываем правильный путь к проекту в папке head
+
         run: dotnet build ./head/Api-version/Api-version.csproj --configuration Release
 
       - name: Generate Swagger (head)
-        run: export PATH="$HOME/.dotnet/tools:$PATH" && dotnet swagger tofile --output ./swagger-head.json ./head/Api-version/bin/Release/net8.0/Api-version.dll v1
+        # Выполняем в папке 'head'
+        working-directory: ./head
+        run: |
+          dotnet swagger tofile --output ../swagger-new.json ./Api-version/bin/Release/net8.0/Api-version.dll v1
 
-      # --- Сравнение и генерация отчета ---
-      - name: Setup Node.js (for openapi-diff npm package)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
+      # --- Шаг 5: Сравнение Swagger файлов с помощью Docker ---
+      - name: Run openapi-diff via Docker
+        run: |
+          docker run --rm -t \
+            -v ${{ github.workspace }}:/specs \
+            openapitools/openapi-diff:latest \
+            --html-detailed /specs/result.html /specs/swagger-base.json /specs/swagger-new.json || true
 
-      - name: Install openapi-diff
-        run: npm install -g @openapitools/openapi-diff-cli
 
-      - name: Run openapi-diff and generate HTML report
-        run: openapi-diff ./swagger-base.json ./swagger-head.json --html report.html || true
-
-      # --- Сохранение отчета ---
+      # --- Шаг 6: Сохранение отчета как артефакта ---
       - name: Upload HTML Diff Report
         uses: actions/upload-artifact@v4
         with:
-          name: api-diff-report-${{ github.event.pull_request.number }}
-          path: report.html
+        
+          name: api-diff-report-${{ github.event.pull_request.number }} # Имя артефакта с номером PR
+          path: result.html # Путь к файлу отчета в рабочей директории workflow
 
-      # --- (Опционально) Отправка в Telegram ---
-      # ... (остается без изменений) ...
+      # --- Шаг 7: (Опционально) Отправка уведомления в Telegram ---
+      # - name: Send notification to Telegram
+      #   if: always() # Отправлять всегда (даже если были ошибки до этого, но отчет мог сгенерироваться)
+      #   uses: appleboy/telegram-action@master
+      #   with:
+      #     to: ${{ secrets.TELEGRAM_CHAT_ID }} # ID чата (из секретов)
+      #     token: ${{ secrets.TELEGRAM_BOT_TOKEN }} # Токен бота (из секретов)
+      #     message: |
+      #       API Diff Report generated for PR #${{ github.event.pull_request.number }} merged into master.
+      #       Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      #       Download the report from the artifacts section of the workflow run.
+
