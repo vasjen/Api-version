@@ -2,15 +2,13 @@ name: API Diff on Merge to Main
 
 on:
   pull_request:
-    types: [merged] # Запускаем при закрытии PR
+    types: [closed] # Запускаем при закрытии PR
     branches:
-      - main
-
-# Условие: Запускать только если PR был смержен (а не просто закрыт)
-if: github.event.pull_request.merged == true
+      - master
 
 jobs:
   generate-api-diff:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest # Используем последнюю Ubuntu
 
     steps:
