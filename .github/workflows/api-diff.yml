@@ -27,20 +27,18 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          # Укажите вашу версию .NET SDK
           dotnet-version: '8.0.x' # <-- ЗАМЕНИТЕ НА ВАШУ ВЕРСИЮ
 
       # --- Генерация Swagger для состояния ДО мерджа ---
       - name: Build base project
         run: dotnet build ./base/Api-version/Api-version.csproj --configuration Release
-        # Возможно, потребуется dotnet restore перед build
 
       - name: Install Swashbuckle CLI (if needed)
         run: dotnet tool install -g Swashbuckle.AspNetCore.Cli || true 
 
       - name: Generate Swagger (base)
         run: dotnet swagger tofile --output ./swagger-base.json ./head/Api-version/bin/Debug/net8.0/Api-version.dll v1
-        # Важно: Убедитесь, что путь к DLL корректен после сборки
+        
 
       # --- Генерация Swagger для состояния ПОСЛЕ мерджа ---
       - name: Build head project
@@ -59,8 +57,7 @@ jobs:
         run: npm install -g @openapitools/openapi-diff-cli
 
       - name: Run openapi-diff and generate HTML report
-        run: |
-          openapi-diff ./swagger-base.json ./swagger-head.json --html report.html || echo "openapi-diff found differences or failed, continuing to upload report."
+        run: openapi-diff ./swagger-base.json ./swagger-head.json --html report.html || echo "openapi-diff found differences or failed, continuing to upload report."
           
       # --- Сохранение отчета ---
       - name: Upload HTML Diff Report
