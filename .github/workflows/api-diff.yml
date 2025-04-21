@@ -1,82 +1,129 @@
-name: API Diff on Merge to Master
+name: API Diff on PR to Dev
 
 on:
   pull_request:
-    types: [closed] # Запускаем при закрытии PR
+    types: [opened, synchronize, reopened]
     branches:
-      - master # Ваша основная ветка
+      - dev # Изменено с master на dev
 
 jobs:
+  check-api-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      has_api_changes: ${{ steps.check-changes.outputs.has_changes }}
+      region_path: ${{ steps.detect-region.outputs.region_path }}
+      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Получаем все коммиты для сравнения веток
+
+      - name: Detect project region
+        id: detect-region
+        run: |
+          # Получаем измененные файлы в PR
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.head_ref }})
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          
+          # Определяем регион проекта по изменённым файлам
+          if echo "$CHANGED_FILES" | grep -q "Api-version.Es/"; then
+            echo "region_path=Api-version.Es" >> $GITHUB_OUTPUT
+            echo "Detected Es region"
+          elif echo "$CHANGED_FILES" | grep -q "Api-version.Kz/"; then
+            echo "region_path=Api-version.Kz" >> $GITHUB_OUTPUT
+            echo "Detected Kz region"
+          else
+            echo "region_path=Api-version" >> $GITHUB_OUTPUT
+            echo "Detected main API project"
+          fi
+
+      - name: Check for API or model changes
+        id: check-changes
+        run: |
+          # Получаем регион из предыдущего шага
+          REGION_PATH="${{ steps.detect-region.outputs.region_path }}"
+          
+          # Проверяем изменения только в контроллерах, моделях или других файлах API
+          API_CHANGES=$(git diff --name-only origin/${{ github.base_ref }} ${{ github.head_ref }} -- \
+            "$REGION_PATH/Controllers/" \
+            "$REGION_PATH/Models/" \
+            "$REGION_PATH/Entities/" \
+            "$REGION_PATH/DTOs/" \
+            "$REGION_PATH/Interfaces/" \
+            "$REGION_PATH/*.cs" \
+          )
+          
+          if [ -n "$API_CHANGES" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "API changes detected in $REGION_PATH:"
+            echo "$API_CHANGES"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No API changes detected in $REGION_PATH"
+          fi
+
   generate-api-diff:
-    # Запускаем только если PR был смержен
-    if: github.event.pull_request.merged == true
-    runs-on: ubuntu-latest # Используем последнюю Ubuntu
+    needs: check-api-changes
+    if: needs.check-api-changes.outputs.has_api_changes == 'true'
+    runs-on: ubuntu-latest
 
     steps:
       # --- Шаг 1: Получение кода ---
-      - name: Checkout base branch state (before merge)
+      - name: Checkout base branch state (dev)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.base_ref }} # Ветка dev
           path: 'base'
 
-      - name: Checkout head branch state (after merge)
+      - name: Checkout head branch state (feature)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ github.head_ref }} # Ветка с изменениями
           path: 'head'
 
       # --- Шаг 2: Настройка .NET ---
-      - name: Setup .NET 8 SDK # Нужен для сборки и для CLI 8.1.0
+      - name: Setup .NET 8 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      # --- Шаг 3: Генерация Swagger для состояния ДО мерджа (base) ---
+      # --- Шаг 3: Генерация Swagger для состояния ДО (base) ---
       - name: Install Swashbuckle CLI (base)
         working-directory: ./base
         run: |
           dotnet new tool-manifest --force
           dotnet tool install Swashbuckle.AspNetCore.Cli --local
 
-      - name: Restore base project dependencies # Добавляем явный restore
-        run: dotnet restore ./base/Api-version/Api-version.csproj
+      - name: Restore base project dependencies
+        run: dotnet restore ./base/${{ needs.check-api-changes.outputs.region_path }}/${{ needs.check-api-changes.outputs.region_path }}.csproj
 
       - name: Build base project
-        run: dotnet build ./base/Api-version/Api-version.csproj --configuration Release --no-restore # Добавляем --no-restore, т.к. сделали restore выше
-
-      # ДОБАВЛЯЕМ ШАГ ПРОВЕРКИ ВЫВОДА СБОРКИ
-      - name: List base build output
-        run: ls -l ./base/Api-version/bin/Release/net8.0/
-        # Посмотрите в логах этого шага, есть ли файл Swashbuckle.AspNetCore.Swagger.dll
+        run: dotnet build ./base/${{ needs.check-api-changes.outputs.region_path }}/${{ needs.check-api-changes.outputs.region_path }}.csproj --configuration Release --no-restore
 
       - name: Generate Swagger (base)
         working-directory: ./base
         run: |
-          dotnet swagger tofile --output ../swagger-base.json ./Api-version/bin/Release/net8.0/Api-version.dll v1
+          dotnet swagger tofile --output ../swagger-base.json ./${{ needs.check-api-changes.outputs.region_path }}/bin/Release/net8.0/${{ needs.check-api-changes.outputs.region_path }}.dll v1
 
-      # --- Шаг 4: Генерация Swagger для состояния ПОСЛЕ мерджа (head) ---
+      # --- Шаг 4: Генерация Swagger для состояния ПОСЛЕ (head) ---
       - name: Install Swashbuckle CLI (head)
         working-directory: ./head
         run: |
           dotnet new tool-manifest --force
           dotnet tool install Swashbuckle.AspNetCore.Cli --local
 
-      - name: Restore head project dependencies # Добавляем явный restore
-        run: dotnet restore ./head/Api-version/Api-version.csproj
+      - name: Restore head project dependencies
+        run: dotnet restore ./head/${{ needs.check-api-changes.outputs.region_path }}/${{ needs.check-api-changes.outputs.region_path }}.csproj
 
       - name: Build head project
-        run: dotnet build ./head/Api-version/Api-version.csproj --configuration Release --no-restore # Добавляем --no-restore
-
-      # ДОБАВЛЯЕМ ШАГ ПРОВЕРКИ ВЫВОДА СБОРКИ
-      - name: List head build output
-        run: ls -l ./head/Api-version/bin/Release/net8.0/
-        # Посмотрите в логах этого шага, есть ли файл Swashbuckle.AspNetCore.Swagger.dll
+        run: dotnet build ./head/${{ needs.check-api-changes.outputs.region_path }}/${{ needs.check-api-changes.outputs.region_path }}.csproj --configuration Release --no-restore
 
       - name: Generate Swagger (head)
         working-directory: ./head
         run: |
-          dotnet swagger tofile --output ../swagger-new.json ./Api-version/bin/Release/net8.0/Api-version.dll v1
+          dotnet swagger tofile --output ../swagger-new.json ./${{ needs.check-api-changes.outputs.region_path }}/bin/Release/net8.0/${{ needs.check-api-changes.outputs.region_path }}.dll v1
 
       # --- Шаг 5: Сравнение Swagger файлов с помощью Docker ---
       - name: Run openapi-diff via Docker
@@ -93,8 +140,28 @@ jobs:
       - name: Upload HTML Diff Report
         uses: actions/upload-artifact@v4
         with:
-          name: api-diff-report-${{ github.event.pull_request.number }}
+          name: api-diff-report-${{ github.event.pull_request.number }}-${{ needs.check-api-changes.outputs.region_path }}
           path: result.html
-
-      # --- Шаг 7: (Опционально) Отправка уведомления в Telegram ---
-      # ... (без изменений) ...
+          
+      # --- Шаг 7: Добавить комментарий к PR с результатами и ссылкой на артефакт ---
+      - name: Add PR Comment with Diff Link
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prNumber = context.issue.number;
+            const regionPath = '${{ needs.check-api-changes.outputs.region_path }}';
+            const artifactName = `api-diff-report-${prNumber}-${regionPath}`;
+            
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body: `## API Changes Detected in ${regionPath}
+              
+              API changes have been detected in this PR. An OpenAPI diff report has been generated.
+              
+              [View Diff Report](https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${{ github.run_id }})
+              
+              Download the artifact named \`${artifactName}\` to see detailed API changes.`
+            });
