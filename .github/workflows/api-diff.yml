@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
-      - dev # Изменено с master на dev
+      - dev
 
 jobs:
   check-api-changes:
